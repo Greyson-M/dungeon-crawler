@@ -41,6 +41,9 @@ gun_image = pygame.image.load("assets/sprites/gun.png").convert_alpha()
 gun_image = pygame.transform.scale(gun_image, (64, 64))
 gun_imageFLIP = pygame.transform.flip(gun_image, True, False)
 
+deag_img = pygame.image.load("assets/sprites/deagle.png").convert_alpha()
+deag_img = pygame.transform.scale(deag_img, (64, 64))
+
 def get_sprite(sheet, frame, width, height, scale=1):
     sprite = pygame.Surface([width, height]).convert_alpha()
     sprite.blit(sheet, (0, 0), ((frame*width), 0, width,height))
@@ -59,17 +62,60 @@ class player():
     def __init__(self) -> None:
         self.pos = CENTER
         self.speed = 5
-        self.frame = character_frames[1]
         self.direction = 0
-        self.equipped_weapon = gun(self)
+        self.angle = 0
+
+        self.start_frame = character_frames[1]
+        self.frame = character_frames[1]
+
+        self.weapons = [gun(self)]
+        self.equipped_slot = 0
+        self.equipped_weapon = self.weapons[self.equipped_slot]
+        
         self.health = 100
         self.max_health = 100
+        
 
-    def draw(self):
+    def pointAt(self, mouse_pos):
+        direction = pygame.math.Vector2(mouse_pos[0] - self.pos[0], mouse_pos[1] - self.pos[1])
+        angle = direction.angle_to((0, -1))
+        self.frame = pygame.transform.rotate(self.start_frame, angle).convert_alpha()
+
+    def draw(self, mouse_pos):
+        if len(self.weapons) < self.equipped_slot+1:
+            self.equipped_slot = 0
+        else: self.equipped_weapon = self.weapons[self.equipped_slot]
+
+        #self.pointAt(mouse_pos)
+
         WIN.blit(self.frame, self.pos)
         #pygame.draw.circle(WIN, WHITE, self.pos, 20)
 
         self.equipped_weapon.draw()
+
+        if self.equipped_slot == 0:
+            pygame.draw.rect(WIN, (219, 172, 52), (100, HEIGHT-70, 50, 50), 3)
+        else: pygame.draw.rect(WIN, BLACK, (100, HEIGHT-70, 50, 50), 3)
+
+        if self.weapons:
+            WIN.blit(self.weapons[0].start_frame, (90, HEIGHT-80))
+
+        if self.equipped_slot == 1:
+            pygame.draw.rect(WIN, (219, 172, 52), (152, HEIGHT-70, 50, 50), 3)
+        else: pygame.draw.rect(WIN, BLACK, (152, HEIGHT-70, 50, 50), 3)
+
+        if len(self.weapons) > 1 and self.weapons[1] != None:
+            WIN.blit(self.weapons[1].start_frame, (148, HEIGHT-70))
+
+        if self.equipped_slot == 2:
+            pygame.draw.rect(WIN, (219, 172, 52), (203, HEIGHT-70, 50, 50), 3)
+        else: pygame.draw.rect(WIN, BLACK, (203, HEIGHT-70, 50, 50), 3)
+        if len(self.weapons) > 2 and self.weapons[2] != None:
+            WIN.blit(self.weapons[2].start_frame, (190, HEIGHT-80))
+        
+        
+
+
 
     def move(self, up=False, down=False, left=False, right=False):
 
@@ -93,41 +139,219 @@ class player():
 class gun():
     def __init__(self, player) -> None:
         self.name = "gun"
-        self.magazine_size = 10
+        self.magazine_size = 20
         self.reload_time = 1
         self.fire_rate = 0.1
-        self.damage = 10
+        self.damage = 34
         self.bullet_speed = 10
+        self.caliber = 2
         self.player = player
         self.pos = player.pos + np.array([0, -10])
-        self.sprite = gun_image
+        self.barrel_pos = self.pos + np.array([35, 35])
+        self.frame = gun_image
+        self.start_frame = gun_image
+        self.start_frame_flip = pygame.transform.flip(gun_image, True, False)
+        self.ammo = []
+        for i in range(self.magazine_size):
+            self.ammo.append(bullet(self, "bullet {}".format(i)))
+
+        self.fired_shots = []
+
+        self.empty = False
+        self.dirhat = np.array([0, -1])
+        self.angle = 0
+
+    def pointAt(self, mouse_pos):
+
+        distx = mouse_pos[0] - self.pos[0]
+        disty = mouse_pos[1] - self.pos[1]
+        self.angle = math.atan2(disty, distx)
+        self.angle_deg = self.angle * 180/pi
+
+        #print (self.angle_deg)
+
+        self.frame = pygame.transform.rotate(self.start_frame, -self.angle_deg).convert_alpha()
+        
+        if (self.angle_deg > -180 and self.angle_deg < -90) or (self.angle_deg > 90 and self.angle_deg < 180):
+            #print ("flip")
+            #self.frame = pygame.transform.rotate(self.frame, -180)
+            self.frame = pygame.transform.rotate(self.start_frame_flip, -self.angle_deg - 180).convert_alpha()
+
     
     def draw(self):
+        ammo_disp = font.render("Ammo: {}".format(len(self.ammo)-1), True, BLACK)
+        WIN.blit(ammo_disp, (10, HEIGHT - 30))
+
+        mouse_pos = pygame.mouse.get_pos()
+        self.pointAt(mouse_pos=mouse_pos)
+        
+        self.pos = self.player.pos + np.array([0, -10])
+        self.barrel_pos = self.pos + np.array([35, 35])
+
+
+
+        '''
         if self.player.direction == 0:
             self.pos = self.player.pos + np.array([0, -35])         #up
-            self.sprite = pygame.transform.rotate(gun_image, 90)
+            self.frame = pygame.transform.rotate(gun_image, 90)
+            self.dirhat = np.array([0, -1])
         if self.player.direction == 1:
             self.pos = self.player.pos + np.array([-15, 20])          #down
-            self.sprite = pygame.transform.rotate(gun_image, 270)
+            self.frame = pygame.transform.rotate(gun_image, 270)
+            self.dirhat = np.array([0, 1])
         if self.player.direction == 2:
             self.pos = self.player.pos + np.array([-20, 10])         #left
-            self.sprite = gun_imageFLIP
+            self.frame = gun_imageFLIP
+            self.dirhat = np.array([-1, 0])
         if self.player.direction == 3:
             self.pos = self.player.pos + np.array([25, 10])          #right
-            self.sprite = pygame.transform.rotate(gun_image, 0)
+            self.frame = pygame.transform.rotate(gun_image, 0)
+            self.dirhat = np.array([1, 0])
+        
+        #distx = mouse_pos[0] - self.pos[0]
+        #disty = mouse_pos[1] - self.pos[1]
+        #self.angle = math.atan2(disty, distx)
+        #self.dirhat = np.array((mouse_pos[0], mouse_pos[1])) / pythag(mouse_pos)
+        #print ("dirhat: ", self.dirhat)
+        '''
+
+         
 
 
-        WIN.blit(self.sprite, self.pos)
+        WIN.blit(self.frame, self.pos)
 
     def attack(self):
-        print("attack")
-        
+
+        if len(self.ammo) <= 1:
+            self.empty = True
+
+
+        if not self.empty and not self.ammo[-1].shot:
+            self.ammo[-1].shoot()
+
+            print(self.ammo[-1].id)
+        print (self.empty)
+        print(len(self.ammo))
+
+    def reload(self):
+        self.empty = False
+        self.ammo = []
+        for i in range(self.magazine_size):
+            self.ammo.append(bullet(self, "bullet {}".format(i)))
+
+
+class deagle(gun):
+    def __init__(self, player) -> None:
+        super().__init__(player)
+        self.name = "deagle"
+        self.magazine_size = 8
+        self.reload_time = 1
+        self.fire_rate = 0.1
+        self.damage = 55
+        self.bullet_speed = 15
+        self.caliber = 5
+
+        self.player = player
+        self.pos = player.pos + np.array([0, -10])
+        self.barrel_pos = self.pos + np.array([35, 35])
+
+        self.frame = deag_img
+        self.start_frame = deag_img
+        self.start_frame_flip = pygame.transform.flip(deag_img, True, False)
+
+        self.ammo = []
+        for i in range(self.magazine_size):
+            self.ammo.append(bullet(self, "bullet {}".format(i)))
+
+        self.fired_shots = []
+        self.empty = False
+
+        self.dirhat = np.array([0, -1])
+        self.angle = 0
 
     
+class bullet():
+    def __init__(self, weapon, id) -> None:
+        self.weapon = weapon
+        self.pos = weapon.barrel_pos
+        self.bullet_speed = weapon.bullet_speed
+        self.radius = weapon.caliber
+        self.shot = False
+        self.destroyed = False
+        self.id = id
 
+    
+    def __del__(self):
+        print("bullet deleted")
+
+    def shoot(self):
+        self.shot = True
+        self.pos = np.array((self.weapon.barrel_pos[0], self.weapon.barrel_pos[1]))
+        self.weapon.fired_shots.append(self)
+        self.weapon.ammo.pop()
+        self.dirhat = self.weapon.dirhat
+        self.angle = self.weapon.angle
+
+    def update(self):
+        if self.shot:
+            speedx = math.cos(self.angle) * self.bullet_speed
+            speedy = math.sin(self.angle) * self.bullet_speed
+            self.pos += np.array([speedx, speedy])
+            self.hitDetect(enemies)
+            self.draw()
+        else:
+            self.pos = self.weapon.pos
+
+    def draw(self):
+
+        if self.pos[0] < 0 or self.pos[0] > WIDTH or self.pos[1] < 0 or self.pos[1] > HEIGHT:
+            print("destroying bullet..")
+            self.destroyed = True
+
+        #print ("id: {} \t pos: {}".format(self.id, self.pos))
+
+        pygame.draw.circle(WIN, BLACK, self.pos, self.radius)
+
+    def hitDetect(self, enemies):
+        for enemy in enemies:
+            if np.linalg.norm(self.pos - enemy.pos) < self.radius + 20:
+                enemy.health -= self.weapon.damage
+                self.destroyed = True
+                print("hit enemy")
+                print("enemy health: {}".format(enemy.health))
+                print("enemy pos: {}".format(enemy.pos))
+                print("bullet pos: {}".format(self.pos))
+                print("distance: {}".format(np.linalg.norm(self.pos - enemy.pos)))
+                print("")
+
+
+class enemy():
+    def __init__(self, pos = np.array([WIDTH/2 + 250, HEIGHT/2 + 100]), drop=None) -> None:
+        self.health = 100
+        self.pos = pos
+        self.drop = drop
+
+    def death(self):
+        enemies.remove(self)
+        if self.drop != None:
+            p1.weapons.append(self.drop)
+
+    def draw(self):
+        if self.health > 0:
+            pygame.draw.circle(WIN, (((255/self.health), self.health * 2, 0)), self.pos, 20)
+        else:
+            self.death()
+            
+        
+        
+        
 
 p1 = player()
 
+enemies = [enemy(drop=deagle(p1))]
+
+for i in range(5):
+    enemies.append(enemy((randint(0, WIDTH), randint(0, HEIGHT))))    
 
 def main():
     clock = pygame.time.Clock()
@@ -148,6 +372,7 @@ def main():
         t += (1/FPS)
 
         Mouse_x, Mouse_y = pygame.mouse.get_pos()
+        MousePos = np.array((Mouse_x, Mouse_y))
 
         for event in pygame.event.get():
 #check for quit
@@ -174,6 +399,17 @@ def main():
                     mov_left = False
                 if event.key == pygame.K_d:
                     mov_right = False
+
+                if event.key == pygame.K_r:
+                    p1.equipped_weapon.reload()
+
+                if event.key == pygame.K_1:
+                    p1.equipped_slot = 0
+                if event.key == pygame.K_2:
+                    p1.equipped_slot = 1
+                if event.key == pygame.K_3:
+                    p1.equipped_slot = 2
+
                 if event.key == pygame.K_ESCAPE:
                     running = False
                     pygame.quit()
@@ -183,7 +419,23 @@ def main():
                     p1.equipped_weapon.attack()
 
         p1.move(up=mov_up, down=mov_down, left=mov_left, right=mov_right)
-        p1.draw()
+        p1.draw(mouse_pos=MousePos)
+
+
+        i=0
+        #print (len(p1.equipped_weapon.fired_shots))
+        for bul in p1.equipped_weapon.fired_shots:
+            bul.update()
+            if bul.destroyed: 
+                p1.equipped_weapon.fired_shots.pop(i)
+                
+            i+=1
+
+
+        for enemy in enemies:
+            enemy.draw()
+
+
         
         pygame.display.update()     #update screen
         WIN.fill((217,217,217))     #clear prev frame
