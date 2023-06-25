@@ -3,6 +3,7 @@ import math
 import time
 from random import randint
 import numpy as np
+from pytmx.util_pygame import load_pygame
 
 #GAME constants
 FPS = 60
@@ -14,6 +15,8 @@ BLACK = (0, 0, 0)
 dt = (1/FPS)
 
 
+
+
 pi = math.pi
 
 
@@ -21,6 +24,10 @@ pi = math.pi
 pygame.init()
 WIN = pygame.display.set_mode((WIDTH, HEIGHT))
 WIN.fill((217, 217, 217))
+
+tmx_data = load_pygame('assets/maps/testmap.tmx')
+test_map = load_pygame('assets/maps/testmap.tmx')
+greymap = load_pygame('assets/maps/greymap.tmx')
 
 sysfont = pygame.font.get_default_font()
 t0 = time.time()
@@ -37,6 +44,7 @@ def distance (vec1, vec2):
     return pythag([xdis, ydis])
 
 sprite_sheet_image = pygame.image.load("assets/sprites/Male 01-1_STRIP.png").convert_alpha()
+emnemy_sheet_image = pygame.image.load("assets/sprites/mob_strip.png").convert_alpha()
 gun_image = pygame.image.load("assets/sprites/gun.png").convert_alpha()
 gun_image = pygame.transform.scale(gun_image, (64, 64))
 gun_imageFLIP = pygame.transform.flip(gun_image, True, False)
@@ -52,36 +60,117 @@ def get_sprite(sheet, frame, width, height, scale=1):
     return sprite
 
 character_frames = []
+enemy_frames = []
 
-for i in range(11):
+for i in range(2):
+    enemy_frames.append(get_sprite(emnemy_sheet_image, i, 32, 32, scale=2))
+
+for i in range(12):
     character_frames.append(get_sprite(sprite_sheet_image, i, 32, 32, scale=2))
+
+class Tile(pygame.sprite.Sprite):
+    def __init__(self, pos, surf, groups=None, scale=1):
+        super().__init__(groups)
+        self.image = pygame.transform.scale(surf, (16*scale, 16*scale))
+        self.rect = self.image.get_rect(topleft=(pos[0]*scale, pos[1]*scale))
+
+'''
+collide_group = []
+scale = 2
+for layer in tmx_data.visible_layers:
+    if hasattr(layer, "data"):
+        for x, y, image in layer.tiles():
+            Tile((x*16, y*16), image, sprite_group, scale=scale)
+
+for g in tmx_data.objectgroups:
+    print(g.name)
+
+for object in tmx_data.objects:
+    collide_group.append([object.type, pygame.Rect((object.x * scale, object.y*scale), (object.width*scale, object.height*scale))])
+
+print(collide_group)
+'''
+
+class animation():
+    def __init__(self, set, start, stop, frame) -> None:
+        self.set = set
+        self.start = start
+        self.stop = stop
+
+        self.frame = start
+        self.last_tick = frame-1
+
+    def nextFrame(self, tick):
+        #print (self.frame)
+        slide = self.set[self.frame]
+        if tick != self.last_tick:
+            if tick % 15 == 0:
+                self.frame += 1
+                if self.frame > self.stop:
+                    self.frame = self.start
+
+                #print (self.frame)
+
+                slide = self.set[self.frame]
+                
+
+            self.last_tick = tick
+
+        else: return self.set[self.frame]
+
+        return slide
+
 
 
 class player():
     
-    def __init__(self) -> None:
+    def __init__(self, current_map) -> None:
+        self.current_map = current_map
+
         self.pos = CENTER
-        self.speed = 5
+        self.speed = 4
         self.direction = 0
         self.angle = 0
-
+        self.vel = np.array([0, 0])
+        self.prevpos = np.array([0, 0])
+        
         self.start_frame = character_frames[1]
         self.frame = character_frames[1]
+        self.box = self.frame.get_rect(topleft=self.pos)
 
-        self.weapons = [gun(self)]
+        self.weapons = [gun(self, self.current_map)]
         self.equipped_slot = 0
         self.equipped_weapon = self.weapons[self.equipped_slot]
         
         self.health = 100
         self.max_health = 100
+
+        self.character_frames = character_frames
+        self.down_anim = animation(self.character_frames, 0, 2, 0)
+        self.left_anim = animation(self.character_frames, 3, 5, 0)
+        self.right_anim = animation(self.character_frames, 6, 8, 0)
+        self.up_anim = animation(self.character_frames, 9, 11, 0)
+         
+        
+        
         
 
     def pointAt(self, mouse_pos):
         direction = pygame.math.Vector2(mouse_pos[0] - self.pos[0], mouse_pos[1] - self.pos[1])
         angle = direction.angle_to((0, -1))
         self.frame = pygame.transform.rotate(self.start_frame, angle).convert_alpha()
+    
+    def updateVel(self):
+        pos = self.pos
+        #print (pos, self.prevpos)
+        self.vel = (self.pos - self.prevpos) *dt
+        self.prevpos = pos.copy()
+        #print(self.vel)
 
     def draw(self, mouse_pos):
+        pos_disp = font.render("pos: {}".format(mouse_pos), True, BLACK)
+        WIN.blit(pos_disp, (10, 20))
+
         if len(self.weapons) < self.equipped_slot+1:
             self.equipped_slot = 0
         else: self.equipped_weapon = self.weapons[self.equipped_slot]
@@ -89,6 +178,7 @@ class player():
         #self.pointAt(mouse_pos)
 
         WIN.blit(self.frame, self.pos)
+        pygame.draw.rect(WIN, BLACK, self.frame.get_rect(topleft=self.pos), 1)
         #pygame.draw.circle(WIN, WHITE, self.pos, 20)
 
         self.equipped_weapon.draw()
@@ -117,27 +207,74 @@ class player():
 
 
 
-    def move(self, up=False, down=False, left=False, right=False):
+    def move(self, movement, frame):
+        vhat = self.vel / pythag(self.vel)
 
-        if up:
-            self.pos[1] -= self.speed
-            self.frame = character_frames[10]
-            self.direction = 0
-        if down:
-            self.pos[1] += self.speed
-            self.frame = character_frames[1]
-            self.direction = 1
-        if left:
-            self.pos[0] -= self.speed
-            self.frame = character_frames[4]
-            self.direction = 2
-        if right:
-            self.pos[0] += self.speed
-            self.frame = character_frames[7]
-            self.direction = 3
+        self.vel = np.array([0, 0])
+        directions = [[0, -self.speed], [0, self.speed], [-self.speed, 0], [self.speed, 0]]
+        i=0
+        for mov in movement:
+            if mov:
+                self.vel += np.array(directions[i])
+                if i == 0:
+                    self.frame = self.up_anim.nextFrame(frame)
+                elif i == 1:
+                    self.frame = self.down_anim.nextFrame(frame)
+                elif i == 2:
+                    self.frame = self.left_anim.nextFrame(frame)
+                elif i == 3:
+                    self.frame = self.right_anim.nextFrame(frame)
+            i+=1
+
+        self.pos += self.vel
+        self.box = self.frame.get_rect(topleft=self.pos)
+
+        for port in self.current_map.portal_group:
+            map = load_pygame(port.path)
+            if self.box.colliderect(port.box):
+
+                direction = port.dir
+                print("TELEPORTING to ", port.path)
+                self.current_map = self.current_map.load(map)
+
+                spawns = self.current_map.spawns
+
+                self.pos = spawns[direction]
+
+                print ("portals: ", self.current_map.portal_group)
+                '''
+                self.current_map.load_map(map)
+                self.current_map.load_collide(map)
+                print ("COLLIDE GROUP: ", self.current_map.collide_group)
+                self.current_map.load_portals(map)
+                print ("PORTAL GROUP: ", self.current_map.portal_group)
+                self.pos = self.current_map.load_spawn(map)
+                self.current_map.load_enemies(map)
+                '''
+
+
+        for id, rect in self.current_map.collide_group:
+            if self.box.colliderect(rect):
+                self.pos -= self.vel
+                break
+
+        for chest in self.current_map.chest_group:
+            if self.box.colliderect(chest.box):
+                if not chest.opened:
+                    chest.opened = True
+                    item = chest.contents
+                    self.weapons.append(item_dict[item])
+
+
+    def hit(self, enemy):
+        pass
+
+
 
 class gun():
-    def __init__(self, player) -> None:
+    def __init__(self, player, current_map) -> None:
+        self.current_map = current_map
+
         self.name = "gun"
         self.magazine_size = 20
         self.reload_time = 1
@@ -153,7 +290,7 @@ class gun():
         self.start_frame_flip = pygame.transform.flip(gun_image, True, False)
         self.ammo = []
         for i in range(self.magazine_size):
-            self.ammo.append(bullet(self, "bullet {}".format(i)))
+            self.ammo.append(bullet(self, "bullet {}".format(i), self.current_map))
 
         self.fired_shots = []
 
@@ -190,34 +327,6 @@ class gun():
 
 
 
-        '''
-        if self.player.direction == 0:
-            self.pos = self.player.pos + np.array([0, -35])         #up
-            self.frame = pygame.transform.rotate(gun_image, 90)
-            self.dirhat = np.array([0, -1])
-        if self.player.direction == 1:
-            self.pos = self.player.pos + np.array([-15, 20])          #down
-            self.frame = pygame.transform.rotate(gun_image, 270)
-            self.dirhat = np.array([0, 1])
-        if self.player.direction == 2:
-            self.pos = self.player.pos + np.array([-20, 10])         #left
-            self.frame = gun_imageFLIP
-            self.dirhat = np.array([-1, 0])
-        if self.player.direction == 3:
-            self.pos = self.player.pos + np.array([25, 10])          #right
-            self.frame = pygame.transform.rotate(gun_image, 0)
-            self.dirhat = np.array([1, 0])
-        
-        #distx = mouse_pos[0] - self.pos[0]
-        #disty = mouse_pos[1] - self.pos[1]
-        #self.angle = math.atan2(disty, distx)
-        #self.dirhat = np.array((mouse_pos[0], mouse_pos[1])) / pythag(mouse_pos)
-        #print ("dirhat: ", self.dirhat)
-        '''
-
-         
-
-
         WIN.blit(self.frame, self.pos)
 
     def attack(self):
@@ -229,20 +338,19 @@ class gun():
         if not self.empty and not self.ammo[-1].shot:
             self.ammo[-1].shoot()
 
-            print(self.ammo[-1].id)
-        print (self.empty)
-        print(len(self.ammo))
 
     def reload(self):
         self.empty = False
         self.ammo = []
         for i in range(self.magazine_size):
-            self.ammo.append(bullet(self, "bullet {}".format(i)))
+            self.ammo.append(bullet(self, "bullet {}".format(i), self.current_map))
 
 
 class deagle(gun):
-    def __init__(self, player) -> None:
-        super().__init__(player)
+    def __init__(self, player, current_map) -> None:
+        super().__init__(player, current_map)
+        self.current_map = current_map
+
         self.name = "deagle"
         self.magazine_size = 8
         self.reload_time = 1
@@ -261,7 +369,7 @@ class deagle(gun):
 
         self.ammo = []
         for i in range(self.magazine_size):
-            self.ammo.append(bullet(self, "bullet {}".format(i)))
+            self.ammo.append(bullet(self, "bullet {}".format(i), self.current_map))
 
         self.fired_shots = []
         self.empty = False
@@ -271,7 +379,8 @@ class deagle(gun):
 
     
 class bullet():
-    def __init__(self, weapon, id) -> None:
+    def __init__(self, weapon, id, current_map) -> None:
+        self.current_map = current_map
         self.weapon = weapon
         self.pos = weapon.barrel_pos
         self.bullet_speed = weapon.bullet_speed
@@ -279,25 +388,35 @@ class bullet():
         self.shot = False
         self.destroyed = False
         self.id = id
-
+        self.box = pygame.Rect(self.pos[0] - self.radius, self.pos[1] - self.radius, self.radius*2, self.radius*2)
     
     def __del__(self):
-        print("bullet deleted")
+        #print("bullet deleted")
+        pass
 
     def shoot(self):
         self.shot = True
         self.pos = np.array((self.weapon.barrel_pos[0], self.weapon.barrel_pos[1]))
+        self.pos = self.weapon.player.pos.copy()
         self.weapon.fired_shots.append(self)
         self.weapon.ammo.pop()
         self.dirhat = self.weapon.dirhat
         self.angle = self.weapon.angle
+
+        
 
     def update(self):
         if self.shot:
             speedx = math.cos(self.angle) * self.bullet_speed
             speedy = math.sin(self.angle) * self.bullet_speed
             self.pos += np.array([speedx, speedy])
-            self.hitDetect(enemies)
+            self.hitDetect(self.current_map.enemies)
+            self.box = pygame.Rect(self.pos[0] - self.radius, self.pos[1] - self.radius, self.radius*2, self.radius*2)
+
+            for id, rect in self.current_map.collide_group:
+                if self.box.colliderect(rect):
+                    self.destroyed = True
+
             self.draw()
         else:
             self.pos = self.weapon.pos
@@ -305,16 +424,16 @@ class bullet():
     def draw(self):
 
         if self.pos[0] < 0 or self.pos[0] > WIDTH or self.pos[1] < 0 or self.pos[1] > HEIGHT:
-            print("destroying bullet..")
             self.destroyed = True
 
         #print ("id: {} \t pos: {}".format(self.id, self.pos))
 
         pygame.draw.circle(WIN, BLACK, self.pos, self.radius)
+        pygame.draw.rect(WIN, ((255, 0, 0)), self.box, 2)
 
     def hitDetect(self, enemies):
         for enemy in enemies:
-            if np.linalg.norm(self.pos - enemy.pos) < self.radius + 20:
+            if self.box.colliderect(enemy.box):
                 enemy.health -= self.weapon.damage
                 self.destroyed = True
                 print("hit enemy")
@@ -326,50 +445,181 @@ class bullet():
 
 
 class enemy():
-    def __init__(self, pos = np.array([WIDTH/2 + 250, HEIGHT/2 + 100]), drop=None) -> None:
+    def __init__(self, current_map, pos = np.array([WIDTH/2 + 250, HEIGHT/2 + 100]), drop=None) -> None:
+        self.frame = enemy_frames[0]
+        
+        self.current_map = current_map
+        
         self.health = 100
         self.pos = pos
         self.drop = drop
 
+        self.speed = 1
+
+        self.box = self.frame.get_rect(topleft=self.pos)
+
     def death(self):
-        enemies.remove(self)
+        self.current_map.enemies.remove(self)
+
+        self.frame = enemy_frames[1]
+
         if self.drop != None:
             p1.weapons.append(self.drop)
 
+    def update(self):
+        self.box = self.frame.get_rect(topleft=self.pos)
+
+        xdist = p1.pos[0] - self.pos[0]
+        ydist = p1.pos[1] - self.pos[1]
+        dirhat = np.array([xdist, ydist])/np.linalg.norm(np.array([xdist, ydist]))
+
+        for id, coll in self.current_map.collide_group:
+            if self.box.colliderect(coll):
+                self.pos -= dirhat * self.speed
+
+        self.pos += dirhat * self.speed
+
     def draw(self):
-        if self.health > 0:
-            pygame.draw.circle(WIN, (((255/self.health), self.health * 2, 0)), self.pos, 20)
-        else:
+        if self.health < 1:
             self.death()
+
+        self.update()
+
+        WIN.blit(self.frame, self.pos)
+        pygame.draw.rect(WIN, ((255, 0, 0)), self.box, 2)
+
+
+class portal():
+    def __init__(self, path, rect, dir):
+        self.box = rect
+        self.dir = dir
+        self.path = path
+
+class chest():
+        def __init__(self, pos, contents, rect, groups=None):
+            self.pos = pos
+            self.contents = contents
+            self.box = rect
+            self.opened = False
             
-        
-        
-        
 
-p1 = player()
+class map():
+    def __init__(self, scale=2) -> None:
+        self.sprite_group = pygame.sprite.Group()
+        self.scale = scale
+        self.collide_group = []
+        self.portal_group = []
+        self.chest_group = []
+        self.enemies = []
+        self.spawns = {}
 
-enemies = [enemy(drop=deagle(p1))]
+        self.name = 0
 
-for i in range(5):
-    enemies.append(enemy((randint(0, WIDTH), randint(0, HEIGHT))))    
+
+
+    def load_map(self, map):
+        self.sprite_group.empty()
+        for layer in map.visible_layers:
+            if hasattr(layer, "data"):
+                for x, y, image in layer.tiles():
+                    Tile((x*16, y*16), image, self.sprite_group, scale=self.scale)
+
+        for g in map.objectgroups:
+            print(g.name)
+
+    def load_collide(self, map):
+        self.collide_group = []
+        for object in map.objects:
+            if object.type == "wall":
+                self.collide_group.append([object.name, pygame.Rect((object.x * self.scale, object.y*self.scale), (object.width*self.scale, object.height*self.scale))])
+
+    def load_portals(self, map):
+        self.portal_group = []
+        for object in map.objects:
+            if object.type == "portal":
+                print (object.properties['direction'])
+                self.portal_group.append(portal(object.name, pygame.Rect((object.x * self.scale, object.y*self.scale), (object.width*self.scale, object.height*self.scale)), object.properties['direction']))
+                #self.portal_group.append([object.name, pygame.Rect((object.x * self.scale, object.y*self.scale), (object.width*self.scale, object.height*self.scale))])
+
+
+    def load_spawn(self, map):
+        for object in map.objects:
+            if object.type == "spawn":
+                self.spawns[object.properties['direction']] = np.array([object.x * self.scale, object.y * self.scale])
+
+
+    def load_chests(self, map):
+        self.chest_group = []
+        for object in map.objects:
+            if object.type == "chest":
+                contents = object.properties['contents']
+                self.chest_group.append(chest(np.array([object.x * self.scale, object.y * self.scale]), contents, pygame.Rect((object.x * self.scale, object.y*self.scale), (object.width*self.scale, object.height*self.scale))))
+
+
+    def load_enemies(self, map):
+        self.enemies = []
+        for object in map.objects:
+            if object.type == "enemy":
+                if object.properties['hasDrop']:
+                    drop = object.properties['drop']
+                    self.enemies.append(enemy(self, np.array([object.x * self.scale, object.y * self.scale]), drop))
+                else: 
+                    self.enemies.append(enemy(self, np.array([object.x * self.scale, object.y * self.scale])))
+
+    def load(self, map):
+        self.sprite_group = pygame.sprite.Group()
+        self.collide_group = []
+        self.portal_group = []
+        self.chest_group = []
+        self.enemies = []
+        self.spawns = {}
+
+        self.name = 0
+
+        self.load_map(map)
+        self.load_collide(map)
+        self.load_portals(map)
+        self.load_spawn(map)
+        self.load_chests(map)
+        self.load_enemies(map)
+
+        self.name = map
+
+        return self
+
+current_map = map()
+current_map.load(test_map)
+
+
+
+p1 = player(current_map)
+item_dict = {0: gun(p1, current_map), 1: deagle(p1, current_map)}
+
+#enemies = [enemy(drop=deagle(p1))]
+
+#for i in range(5):
+#    enemies.append(enemy((randint(0, WIDTH), randint(0, HEIGHT))))    
 
 def main():
     clock = pygame.time.Clock()
     running = True
     t = 1/FPS
     prevt = 0
+    frames = 0
     WIN.fill((217, 217, 217))
     pygame.display.flip()
 
-    mov_up = False
-    mov_down = False
-    mov_left = False
-    mov_right = False
+    direction = 0
+    movV = [False, False]
+    movH = [False, False]
+    mov = [False, False, False, False]
 
     while running:
         clock.tick(FPS)
         prevt += (1/FPS)
         t += (1/FPS)
+        frames += 1
+        tick = frames/15
 
         Mouse_x, Mouse_y = pygame.mouse.get_pos()
         MousePos = np.array((Mouse_x, Mouse_y))
@@ -383,22 +633,34 @@ def main():
 #check for keypresses
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_w:
-                    mov_up = True
+                    direction = 0
+                    movV[0] = True
+                    mov[0] = True
                 if event.key == pygame.K_s:
-                    mov_down = True
+                    movV[1] = True
+                    mov[1] = True
+                    direction = 1
                 if event.key == pygame.K_a:
-                    mov_left = True
+                    movH[0] = True
+                    mov[2] = True
+                    direction = 2
                 if event.key == pygame.K_d:
-                    mov_right = True
+                    movH[1] = True
+                    mov[3] = True
+                    direction = 3
             if event.type == pygame.KEYUP:
                 if event.key == pygame.K_w:
-                    mov_up = False
+                    movV[0] = False
+                    mov[0] = False
                 if event.key == pygame.K_s:
-                    mov_down = False
+                    movV[1] = False
+                    mov[1] = False
                 if event.key == pygame.K_a:
-                    mov_left = False
+                    movH[0] = False
+                    mov[2] = False
                 if event.key == pygame.K_d:
-                    mov_right = False
+                    movH[1] = False
+                    mov[3] = False
 
                 if event.key == pygame.K_r:
                     p1.equipped_weapon.reload()
@@ -418,8 +680,24 @@ def main():
                 if event.button == 1:
                     p1.equipped_weapon.attack()
 
-        p1.move(up=mov_up, down=mov_down, left=mov_left, right=mov_right)
+        current_map.sprite_group.draw(WIN)
+
+        '''
+        if True in movV:
+            p1.moveVert(movV)
+        if True in movH:
+            p1.moveHorz(movH)
+        
+        '''
+
+        if True in mov:
+            p1.move(mov, frames)
+
         p1.draw(mouse_pos=MousePos)
+
+        if frames % 15 == 0:
+            #p1.updateVel()
+            pass
 
 
         i=0
@@ -432,7 +710,7 @@ def main():
             i+=1
 
 
-        for enemy in enemies:
+        for enemy in current_map.enemies:
             enemy.draw()
 
 
