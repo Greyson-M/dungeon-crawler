@@ -150,6 +150,8 @@ class player():
         self.left_anim = animation(self.character_frames, 3, 5, 0)
         self.right_anim = animation(self.character_frames, 6, 8, 0)
         self.up_anim = animation(self.character_frames, 9, 11, 0)
+
+        self.collide_dir = self.direction
          
         
         
@@ -169,6 +171,12 @@ class player():
 
     def draw(self, mouse_pos):
         pos_disp = font.render("pos: {}".format(mouse_pos), True, BLACK)
+        health_disp = font.render("health: {}".format(self.health), True, BLACK)
+
+        pygame.draw.rect(WIN, ((50, 50, 50)), (275, 650, 400, 40))
+        pygame.draw.rect(WIN, ((230, 20, 20)), (275, 650, self.health*4, 40))
+
+        WIN.blit(health_disp, (280, 670))
         WIN.blit(pos_disp, (10, 20))
 
         if len(self.weapons) < self.equipped_slot+1:
@@ -218,12 +226,16 @@ class player():
                 self.vel += np.array(directions[i])
                 if i == 0:
                     self.frame = self.up_anim.nextFrame(frame)
+                    self.direction = 0
                 elif i == 1:
                     self.frame = self.down_anim.nextFrame(frame)
+                    self.direction = 1
                 elif i == 2:
                     self.frame = self.left_anim.nextFrame(frame)
+                    self.direction = 2
                 elif i == 3:
                     self.frame = self.right_anim.nextFrame(frame)
+                    self.direction = 3
             i+=1
 
         self.pos += self.vel
@@ -242,20 +254,12 @@ class player():
                 self.pos = spawns[direction]
 
                 print ("portals: ", self.current_map.portal_group)
-                '''
-                self.current_map.load_map(map)
-                self.current_map.load_collide(map)
-                print ("COLLIDE GROUP: ", self.current_map.collide_group)
-                self.current_map.load_portals(map)
-                print ("PORTAL GROUP: ", self.current_map.portal_group)
-                self.pos = self.current_map.load_spawn(map)
-                self.current_map.load_enemies(map)
-                '''
 
 
         for id, rect in self.current_map.collide_group:
             if self.box.colliderect(rect):
-                self.pos -= self.vel
+                self.pos -= self.vel*1.1
+
                 break
 
         for chest in self.current_map.chest_group:
@@ -267,7 +271,10 @@ class player():
 
 
     def hit(self, enemy):
-        pass
+        self.health -= enemy.damage
+        print ("health: ", self.health)
+        self.pos += self.speed * (enemy.vel / pythag(enemy.vel)) * 2
+        print ("vel: ", enemy.vel * 60)
 
 
 
@@ -451,12 +458,21 @@ class enemy():
         self.current_map = current_map
         
         self.health = 100
+        self.damage = 10
+        self.attack_cooldown = 1
         self.pos = pos
         self.drop = drop
+
+        self.prevpos = self.pos.copy()
 
         self.speed = 1
 
         self.box = self.frame.get_rect(topleft=self.pos)
+
+        self.attacked = False
+        self.attack_time = time.time()
+
+        self.vel = np.array([0, 0])
 
     def death(self):
         self.current_map.enemies.remove(self)
@@ -467,6 +483,10 @@ class enemy():
             p1.weapons.append(self.drop)
 
     def update(self):
+        pos = self.pos
+        self.vel = (self.pos - self.prevpos) *dt
+        self.prevpos = pos.copy()
+
         self.box = self.frame.get_rect(topleft=self.pos)
 
         xdist = p1.pos[0] - self.pos[0]
@@ -476,6 +496,13 @@ class enemy():
         for id, coll in self.current_map.collide_group:
             if self.box.colliderect(coll):
                 self.pos -= dirhat * self.speed
+
+        if time.time() - self.attack_time > self.attack_cooldown:
+            if self.box.colliderect(p1.box):
+                p1.hit(self)
+                self.attacked = True
+                self.attack_time = time.time()
+            
 
         self.pos += dirhat * self.speed
 
